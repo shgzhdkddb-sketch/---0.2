@@ -3,8 +3,6 @@ name: 🐻 Собрать APK — АРТ Ярославль
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +13,9 @@ jobs:
     steps:
       - name: 📥 Скачать код
         uses: actions/checkout@v4
+        with:
+          # Важно: сохранить историю для правильной обработки
+          fetch-depth: 0
 
       - name: ☕ Установить Java 17
         uses: actions/setup-java@v4
@@ -23,21 +24,53 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: 🔑 Права на gradlew
-        run: chmod +x gradlew
-
-      - name: 📦 Скачать gradle-wrapper.jar
+      - name: 🔧 Исправить окончания строк и права
         run: |
+          # Исправляем gradlew
+          if [ -f gradlew ]; then
+            sed -i 's/\r$//' gradlew
+            chmod +x gradlew
+          fi
+          
+          # Проверяем права на выполнение
+          ls -la gradlew
+
+      - name: 📦 Подготовка Gradle Wrapper
+        run: |
+          # Создаём папку если её нет
           mkdir -p gradle/wrapper
-          curl -sL "https://github.com/gradle/gradle/raw/v8.9.0/gradle/wrapper/gradle-wrapper.jar" \
-            -o gradle/wrapper/gradle-wrapper.jar
+          
+          # Скачиваем wrapper.jar если его нет
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "📦 Скачиваем gradle-wrapper.jar..."
+            curl -sL "https://github.com/gradle/gradle/raw/v8.9/gradle/wrapper/gradle-wrapper.jar" \
+              -o gradle/wrapper/gradle-wrapper.jar
+          else
+            echo "✅ gradle-wrapper.jar уже существует"
+          fi
+          
+          # Проверяем содержимое
+          ls -la gradle/wrapper/
 
       - name: 🏗️ Собрать Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          echo "🚀 Начинаем сборку..."
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: 📲 Загрузить APK
         uses: actions/upload-artifact@v4
         with:
           name: art-yaroslavl-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
+          
+      - name: 📊 Вывести информацию о собранном APK
+        if: success()
+        run: |
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            echo "✅ APK успешно собран!"
+            ls -lh app/build/outputs/apk/debug/
+          else
+            echo "❌ APK не найден!"
+            exit 1
+          fi
